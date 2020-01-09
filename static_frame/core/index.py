@@ -274,6 +274,8 @@ class PositionsAllocator:
         cls._array.flags.writeable = False
         return cls._array[:size]
 
+#-------------------------------------------------------------------------------
+
 
 @doc_inject(selector='index_init')
 class Index(IndexBase):
@@ -332,11 +334,8 @@ class Index(IndexBase):
             if labels_len == 0:
                 return EMPTY_ARRAY # alrady immutable
             else:
-                # if dtype is None:
-                #     labels = np.array(mapping.keys(), dtype=object)
-                # else:
-                #     labels = np.fromiter(mapping, count=labels_len, dtype=dtype)
-
+                # NOTE: this is poor induction of dtype
+                # NOTE: this supports mappings that have tuples as values
                 labels = np.empty(labels_len, dtype=dtype if dtype else object)
                 for k, v in mapping.items():
                     labels[v] = k
@@ -351,6 +350,7 @@ class Index(IndexBase):
         # positions is either None or an ndarray
         if isinstance(positions, np.ndarray): # if an np array can handle directly
             return immutable_filter(positions)
+
         return PositionsAllocator.get(len(mapping))
         # positions = np.arange(len(mapping))
         # positions.flags.writeable = False
@@ -967,10 +967,16 @@ class IndexGO(Index):
                     self._labels.dtype,
                     self._labels_mutable_dtype)
 
-        self._labels = np.array(self._labels_mutable, dtype=self._labels_mutable_dtype)
+        self._labels = np.array(
+                self._labels_mutable,
+                dtype=self._labels_mutable_dtype)
         self._labels.flags.writeable = False
-        self._positions = np.arange(self._positions_mutable_count)
-        self._positions.flags.writeable = False
+
+        # self._positions = np.arange(self._positions_mutable_count)
+        # self._positions.flags.writeable = False
+
+        self._positions = PositionsAllocator.get(self._positions_mutable_count)
+
         self._recache = False
 
     #---------------------------------------------------------------------------
