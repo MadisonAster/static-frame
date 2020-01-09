@@ -7,6 +7,9 @@ from functools import reduce
 
 import numpy as np
 
+from automap import AutoMap
+from automap import FrozenAutoMap
+
 from static_frame.core.util import DEFAULT_SORT_KIND
 from static_frame.core.util import NULL_SLICE
 from static_frame.core.util import EMPTY_TUPLE
@@ -336,10 +339,9 @@ class Index(IndexBase):
         positions.flags.writeable = False
         return positions
 
-    @staticmethod
-    def _get_map(
+    @classmethod
+    def _get_map(cls,
             labels: tp.Iterable[tp.Hashable],
-            positions=None
             ) -> tp.Dict[tp.Hashable, int]:
         '''
         Return a dictionary mapping index labels to integer positions.
@@ -349,13 +351,22 @@ class Index(IndexBase):
         Args:
             lables: an Iterable of hashables; can be a generator.
         '''
-        if positions is not None: # can zip both without new collection
-            return dict(zip(labels, positions))
-        if hasattr(labels, '__len__'):
-            # unhashable 2D numpy arrays will raise
-            return dict(zip(labels, range(len(labels))))
-        # support labels as a generator
-        return {v: k for k, v in enumerate(labels)}
+        try:
+            if cls.STATIC:
+                return FrozenAutoMap(labels)
+            else:
+                return AutoMap(labels)
+        except ValueError: # there were duplicates
+            # static_frame.core.exception.ErrorInitIndex: labels (5000) have non-unique values (100)
+            raise ErrorInitIndex(f'labels ({len(labels)}) have non-unique values ({len(set(labels))})')
+
+        # if positions is not None: # can zip both without new collection
+        #     return dict(zip(labels, positions))
+        # if hasattr(labels, '__len__'):
+        #     # unhashable 2D numpy arrays will raise
+        #     return dict(zip(labels, range(len(labels))))
+        # # support labels as a generator
+        # return {v: k for k, v in enumerate(labels)}
 
     #---------------------------------------------------------------------------
     # constructors
@@ -429,7 +440,7 @@ class Index(IndexBase):
         self._name = name if name is None else name_filter(name)
 
         if self._map is None:
-            self._map = self._get_map(labels, positions)
+            self._map = self._get_map(labels)
 
         # this might be NP array, or a list, depending on if static or grow only; if an array, dtype will be compared with passed dtype_extract
         self._labels = self._extract_labels(self._map, labels, dtype_extract)
@@ -955,7 +966,7 @@ class IndexGO(Index):
             raise KeyError(f'duplicate key append attempted: {value}')
 
         # the new value is the count
-        self._map[value] = self._positions_mutable_count
+        self._map.add(value)
 
         if self._labels_mutable_dtype is not None:
             self._labels_mutable_dtype = resolve_dtype(
