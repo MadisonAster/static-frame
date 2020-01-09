@@ -256,6 +256,25 @@ def mutable_immutable_index_filter(target_static: bool, index: I) -> I:
 
 #-------------------------------------------------------------------------------
 
+class PositionsAllocator:
+
+    _size: int = 10000
+    _array = np.arange(_size)
+    _array.flags.writeable = False
+
+    @classmethod
+    def get(cls, size: int) -> np.ndarray:
+        if size <= cls._size:
+            # slices of immutable arrays are immutable
+            return cls._array[:size]
+
+        # update to great order of magnitude
+        cls._size = np.power(10, int(np.ceil(np.log10(size))))
+        cls._array = np.arange(cls._size)
+        cls._array.flags.writeable = False
+        return cls._array[:size]
+
+
 @doc_inject(selector='index_init')
 class Index(IndexBase):
     '''A mapping of labels to positions, immutable and of fixed size. Used by default in :py:class:`Series` and as index and columns in :py:class:`Frame`. Base class of all 1D indices.
@@ -274,7 +293,6 @@ class Index(IndexBase):
 
     # _IMMUTABLE_CONSTRUCTOR is None from IndexBase
     # _MUTABLE_CONSTRUCTOR will be set after IndexGO defined
-
 
     _UFUNC_UNION = union1d
     _UFUNC_INTERSECTION = intersect1d
@@ -310,17 +328,15 @@ class Index(IndexBase):
             labels, _ = iterable_to_array(labels, dtype=dtype)
 
         else: # labels may be an expired generator, must use the mapping
-
-            # NOTE: explore why this does not work
-            # if dtype is None:
-            #     labels = np.array(list(mapping.keys()), dtype=object)
-            # else:
-            #     labels = np.fromiter(mapping.keys(), count=len(mapping), dtype=dtype)
-
             labels_len = len(mapping)
             if labels_len == 0:
-                labels = EMPTY_ARRAY
+                return EMPTY_ARRAY # alrady immutable
             else:
+                # if dtype is None:
+                #     labels = np.array(mapping.keys(), dtype=object)
+                # else:
+                #     labels = np.fromiter(mapping, count=labels_len, dtype=dtype)
+
                 labels = np.empty(labels_len, dtype=dtype if dtype else object)
                 for k, v in mapping.items():
                     labels[v] = k
@@ -331,13 +347,14 @@ class Index(IndexBase):
     @staticmethod
     def _extract_positions(
             mapping,
-            positions):
+            positions: tp.Iterable[int]):
         # positions is either None or an ndarray
         if isinstance(positions, np.ndarray): # if an np array can handle directly
             return immutable_filter(positions)
-        positions = np.arange(len(mapping))
-        positions.flags.writeable = False
-        return positions
+        return PositionsAllocator.get(len(mapping))
+        # positions = np.arange(len(mapping))
+        # positions.flags.writeable = False
+        # return positions
 
     @classmethod
     def _get_map(cls,

@@ -993,19 +993,21 @@ class FrameFloat_apply_axis1(PerfTest):
 
 
 class FrameFloat_slice_loc_indices(PerfTest):
-    NUMBER = 100
+    NUMBER = 200
 
     @staticmethod
     def pd() -> None:
+        src = SampleData.get('pdf_float_10k')
         for i in range(0, 10000, 1000):
-            start = SampleData.get('pdf_float_10k').index[i]
-            SampleData.get('pdf_float_10k').loc[start:]
+            start = src.index[i]
+            src.loc[start:]
 
     @staticmethod
     def sf() -> None:
+        src = SampleData.get('sff_float_10k')
         for i in range(0, 10000, 1000):
-            start = SampleData.get('sff_float_10k').index.values[i]
-            SampleData.get('sff_float_10k').loc[start:]
+            start = src.index.values[i]
+            src.loc[start:]
 
 
 class FrameFloat_slice_loc_index(PerfTest):
