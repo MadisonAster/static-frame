@@ -1000,14 +1000,14 @@ class FrameFloat_slice_loc_indices(PerfTest):
         src = SampleData.get('pdf_float_10k')
         for i in range(0, 10000, 1000):
             start = src.index[i]
-            src.loc[start:]
+            _ = src.loc[start:]
 
     @staticmethod
     def sf() -> None:
         src = SampleData.get('sff_float_10k')
         for i in range(0, 10000, 1000):
             start = src.index.values[i]
-            src.loc[start:]
+            _ = src.loc[start:]
 
 
 class FrameFloat_slice_loc_index(PerfTest):

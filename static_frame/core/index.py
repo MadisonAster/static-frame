@@ -7,8 +7,8 @@ from functools import reduce
 
 import numpy as np
 
-from automap import AutoMap
-from automap import FrozenAutoMap
+from automap import AutoMap #pylint: disable=E0611
+from automap import FrozenAutoMap #pylint: disable=E0611
 
 from static_frame.core.util import DEFAULT_SORT_KIND
 from static_frame.core.util import NULL_SLICE
