@@ -3,6 +3,15 @@
 What is New in Static Frame
 ===============================
 
+
+0.5.10
+----------
+
+Improvements to ``Frame.assign`` to handle unordered column selectors and preserve columnar types not affected by assignment.
+
+Restored application of default column and index formattng in ``StoreXLSX``.
+
+
 0.5.9
 ----------
 

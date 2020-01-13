@@ -1257,6 +1257,92 @@ class TestUnit(TestCase):
         self.assertEqual(f1.ndim, 2)
         self.assertEqual(f1.shape, (2, 5))
 
+    #---------------------------------------------------------------------------
+    def test_frame_assign_getitem_a(self) -> None:
+
+        f1 = FrameGO(index=(0,1,2))
+        for idx, col in enumerate(string.ascii_uppercase + string.ascii_lowercase):
+            f1[col] = idx
+
+        fields = ['m','V','P','c','Y','r','q','R','j','X','a','E','K','p','u','G','D','w','d','e','H','i','h','N','O','k','l','F','g','o','M','T','n','L','Q','W','t','v','s','Z','J','I','b']
+
+        # check that normal selection works
+        f1_sub = f1[fields]
+        self.assertEqual(f1_sub.columns.values.tolist(), fields)
+
+        f2 = f1.assign[fields](f1[fields] * 0.5)
+
+        self.assertTrue((f2.columns == f1.columns).all())
+        self.assertTrue((f2.index == f1.index).all())
+
+        # as expected, values is coercing all to floats
+        self.assertEqual(f2.values.tolist(),
+                [[0.0, 1.0, 2.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 18.0, 9.5, 20.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 31.0, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5, 19.0, 19.5, 20.0, 20.5, 21.0, 21.5, 22.0, 22.5, 23.0, 23.5, 24.0, 49.0, 50.0, 51.0], [0.0, 1.0, 2.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 18.0, 9.5, 20.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 31.0, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5, 19.0, 19.5, 20.0, 20.5, 21.0, 21.5, 22.0, 22.5, 23.0, 23.5, 24.0, 49.0, 50.0, 51.0], [0.0, 1.0, 2.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 18.0, 9.5, 20.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 31.0, 16.0, 16.5, 17.0, 17.5, 18.0, 18.5, 19.0, 19.5, 20.0, 20.5, 21.0, 21.5, 22.0, 22.5, 23.0, 23.5, 24.0, 49.0, 50.0, 51.0]]
+                )
+
+    def test_frame_assign_getitem_b(self) -> None:
+
+        f1 = FrameGO(index=(0,1,2))
+        for idx, col in enumerate('abcdef'):
+            f1[col] = idx
+
+        f2 = f1.assign['b'](Series(('b','c','d'), index=(2, 0, 1)))
+        self.assertEqual(f2['b'].to_pairs(),
+                ((0, 'c'), (1, 'd'), (2, 'b')))
+
+
+    def test_frame_assign_getitem_c(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('ab'))
+        f2 = f1.assign['a']([1.1, 2.1])
+        self.assertEqual(f2._blocks.shapes.tolist(), [(2,), (2,1)])
+        self.assertEqual(f2.dtypes.values.tolist(), [np.dtype('float64'), np.dtype('bool')])
+        self.assertEqual(f2.to_pairs(0),
+                (('a', ((0, 1.1), (1, 2.1))), ('b', ((0, False), (1, False))))
+                )
+
+    def test_frame_assign_getitem_d(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('abcd'))
+        f2 = f1.assign['b']([1.1, 2.1])
+        self.assertEqual(f2._blocks.shapes.tolist(), [(2, 1), (2,), (2, 2)])
+        self.assertEqual(f2.dtypes.values.tolist(),
+                [np.dtype('bool'), np.dtype('float64'), np.dtype('bool'), np.dtype('bool')]
+                )
+        self.assertEqual( f2.to_pairs(0),
+                (('a', ((0, False), (1, False))), ('b', ((0, 1.1), (1, 2.1))), ('c', ((0, False), (1, False))), ('d', ((0, False), (1, False))))
+                )
+
+    def test_frame_assign_getitem_e(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('abcd'))
+        f2 = f1.assign['c']([1.1, 2.1])
+        self.assertEqual(f2._blocks.shapes.tolist(), [(2, 2), (2,), (2, 1)])
+        self.assertEqual(f2.dtypes.values.tolist(),
+                [np.dtype('bool'), np.dtype('bool'), np.dtype('float64'), np.dtype('bool')]
+                )
+        self.assertEqual(f2.to_pairs(0),
+                (('a', ((0, False), (1, False))), ('b', ((0, False), (1, False))), ('c', ((0, 1.1), (1, 2.1))), ('d', ((0, False), (1, False))))
+                )
+
+    def test_frame_assign_getitem_f(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('abcd'))
+        f2 = f1.assign['d']([1.1, 2.1])
+        self.assertEqual(f2._blocks.shapes.tolist(), [(2, 3), (2,),])
+        self.assertEqual(f2.dtypes.values.tolist(),
+                [np.dtype('bool'), np.dtype('bool'), np.dtype('bool'), np.dtype('float64')]
+                )
+        self.assertEqual(f2.to_pairs(0),
+                (('a', ((0, False), (1, False))), ('b', ((0, False), (1, False))), ('c', ((0, False), (1, False))), ('d', ((0, 1.1), (1, 2.1))))
+                )
+
+    def test_frame_assign_getitem_g(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('abcde'))
+        f2 = f1.assign['b':'d']('x') # type: ignore
+        self.assertEqual(f2._blocks.shapes.tolist(), [(2, 1), (2, 3), (2, 1)])
+        self.assertEqual(f2.dtypes.values.tolist(),
+                [np.dtype('bool'), np.dtype('<U1'), np.dtype('<U1'), np.dtype('<U1'), np.dtype('bool')]
+                )
+        self.assertEqual(f2.to_pairs(0),
+                (('a', ((0, False), (1, False))), ('b', ((0, 'x'), (1, 'x'))), ('c', ((0, 'x'), (1, 'x'))), ('d', ((0, 'x'), (1, 'x'))), ('e', ((0, False), (1, False)))))
+
 
 
     def test_frame_assign_iloc_a(self) -> None:
@@ -1359,17 +1445,7 @@ class TestUnit(TestCase):
                 columns=('s', 't', 'w'),
                 consolidate_blocks=True)
 
-
         f2 = f1.assign.loc[['x', 'y'], ['s', 't']](value1)
-
-        # In : f1.assign.loc[['x', 'y'], ['s', 't']](value1)
-        # <Frame>
-        # <Index> p       q       r     s        t        <<U1>
-        # <Index>
-        # x       1       2       a     20       21
-        # y       30      50      b     23       24
-        # <<U1>   <int64> <int64> <<U1> <object> <object>
-
         self.assertEqual(f2.to_pairs(0),
                 (('p', (('x', 1), ('y', 30))), ('q', (('x', 2), ('y', 50))), ('r', (('x', 'a'), ('y', 'b'))), ('s', (('x', 20), ('y', 23))), ('t', (('x', 21), ('y', 24)))))
 
@@ -1404,6 +1480,15 @@ class TestUnit(TestCase):
         self.assertEqual(f5.to_pairs(0),
                 (('p', (('a', 2), ('b', 60), ('c', 60), ('d', 6), ('e', 60), ('f', 60))), ('q', (('a', 4), ('b', 100), ('c', 100), ('d', 10), ('e', 1000), ('f', 4))), ('r', (('a', 'a'), ('b', 'b'), ('c', 'c'), ('d', 'c'), ('e', 'd'), ('f', 'e'))), ('s', (('a', False), ('b', True), ('c', False), ('d', False), ('e', True), ('f', True))), ('t', (('a', True), ('b', False), ('c', False), ('d', True), ('e', True), ('f', True))))
                 )
+
+
+    def test_frame_assign_loc_f(self) -> None:
+        f1 = sf.Frame(False, index=range(2), columns=tuple('abcde'))
+        f2 = f1.assign.loc[1, 'b':'d']('x') # type: ignore
+        self.assertEqual(f2.dtypes.values.tolist(),
+                [np.dtype('bool'), np.dtype('O'), np.dtype('O'), np.dtype('O'), np.dtype('bool')])
+        self.assertEqual(f2.to_pairs(0),
+                (('a', ((0, False), (1, False))), ('b', ((0, False), (1, 'x'))), ('c', ((0, False), (1, 'x'))), ('d', ((0, False), (1, 'x'))), ('e', ((0, False), (1, False)))))
 
 
     def test_frame_assign_coercion_a(self) -> None:

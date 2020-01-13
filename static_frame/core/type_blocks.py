@@ -5,6 +5,7 @@ import typing as tp
 from itertools import zip_longest
 from itertools import chain
 from functools import partial
+# from collections import deque
 import numpy as np
 
 
@@ -1280,81 +1281,144 @@ class TypeBlocks(ContainerOperand):
             value: object = None
             ) -> tp.Iterator[np.ndarray]:
         '''Assign value into all blocks, returning blocks of the same size and shape.
+
+        Args:
+            column_key: must be sorted in ascending order.
         '''
         if isinstance(value, np.ndarray):
             value_dtype = value.dtype
         else:
             value_dtype = np.array(value).dtype
 
-        # this selects the columns; but need to return all blocks
-        block_slices = iter(self._key_to_block_slices(column_key))
-        target_block_idx = target_slice = None
-        targets_remain = True
+        # NOTE: this requires column_key to be ordered to work; we cannot use retain_key_order=False, as the passed `value` is ordered by that key
+        target_block_slices = iter(self._key_to_block_slices(
+                column_key,
+                retain_key_order=True),
+                )
+        target_key: tp.Optional[tp.Union[int, slice]] = None
+        target_block_idx: tp.Optional[int] = None
+        targets_remain: bool = True
+        target_is_slice: bool
+        start: int
+
+        row_key_is_null_slice = row_key is None or (
+                isinstance(row_key, slice) and row_key == NULL_SLICE)
+
+        assigned_components: tp.List[np.ndarray] = []
 
         for block_idx, b in enumerate(self._blocks):
+            assigned_components.clear()
+            assigned_stop: int = 0 # exclusive maximum
 
-            assigned = None
             while targets_remain:
                 if target_block_idx is None: # can be zero
                     try:
-                        target_block_idx, target_slice = next(block_slices)
+                        target_block_idx, target_key = next(target_block_slices)
                     except StopIteration:
-                        targets_remain = False
+                        targets_remain = False # stop entering while loop
                         break
+                    target_is_slice = isinstance(target_key, slice)
 
                 if block_idx != target_block_idx:
                     break # need to advance blocks, keep targets
 
-                # from here, we have a target we need to apply
-                if assigned is None:
-                    assigned_dtype = resolve_dtype(value_dtype, b.dtype)
-                    if b.dtype == assigned_dtype:
-                        assigned = b.copy()
-                    else:
-                        assigned = b.astype(assigned_dtype)
+                #---------------------------------------------------------------
+                # from here, we have at least one target we need to apply in the current block.
 
-                # match sliceable, when target_slice is a slice (can be an integer)
-                if (isinstance(target_slice, slice) and
+                block_is_column = b.ndim == 1 or (b.ndim > 1 and b.shape[1] == 1)
+                start = target_key if not target_is_slice else target_key.start # type: ignore
+
+                if start > assigned_stop:
+                    # backfill, from block, from the last assigned position
+                    b_component = b[NULL_SLICE, slice(assigned_stop, start)]
+                    b_component.flags.writeable = False
+                    assigned_components.append(b_component)
+
+                # add empty components for the assignment region
+                if target_is_slice and not block_is_column:
+                    # can assume this slice has no strides
+                    t_width = target_key.stop - target_key.start # type: ignore
+                    t_shape = (b.shape[0], t_width)
+                else: # b.ndim == 1 or target is an integer: get a 1d array
+                    t_width = 1
+                    t_shape = b.shape[0]
+
+                if row_key_is_null_slice:
+                    # use value_dtype; will replace entire sub block, can be empty
+                    assigned_target = np.empty(t_shape, dtype=value_dtype)
+                else: # will need to mix types
+                    assigned_dtype = resolve_dtype(value_dtype, b.dtype)
+                    if block_is_column:
+                        assigned_target_pre = b
+                    else:
+                        assigned_target_pre = b[NULL_SLICE, target_key]
+
+                    if b.dtype == assigned_dtype:
+                        assigned_target = assigned_target_pre.copy()
+                    else:
+                        assigned_target = assigned_target_pre.astype(assigned_dtype)
+
+                # add assigned_target to assigned_components below, after mutating
+                assigned_stop = start + t_width
+
+                #---------------------------------------------------------------
+                # match sliceable, when target_key is a slice (can be an element)
+                if (target_is_slice and
                         not isinstance(value, str)
                         and hasattr(value, '__len__')):
-                    if b.ndim == 1:
-                        width = 1
+                    if block_is_column:
+                        v_width = 1
                         # if block is 1D, then we can only take 1 column if we have a 2d value
                         value_piece_column_key: tp.Union[slice, int] = 0
                     else:
-                        width = len(range(*target_slice.indices(assigned.shape[1])))
-                        # if block id 2D, can take up to width from value
-                        value_piece_column_key = slice(0, width)
+                        v_width = len(range(*target_key.indices(b.shape[1]))) # type: ignore
+                        # if block id 2D, can take up to v_width from value
+                        value_piece_column_key = slice(0, v_width)
 
                     if isinstance(value, np.ndarray) and value.ndim > 1:
                         # if value is 2D array, we want value[:, 0]
                         value_piece = value[:, value_piece_column_key]
-                        value = value[:, slice(width, None)]
+                        value = value[:, slice(v_width, None)]
                         # reassign remainder for next iteration
                     else: # value is 1D array or tuple
                         # we assume we assigning into a horizontal position
                         value_piece = value[value_piece_column_key]
-                        value = value[slice(width, None)]
+                        value = value[slice(v_width, None)]
                 else: # not sliceable; this can be a single column
                     value_piece = value
 
-                if b.ndim == 1: # given 1D array, our row key is all we need
-                    # TODO: handle row_key of None
-                    assigned[row_key] = value_piece
+                #---------------------------------------------------------------
+                # write `value` into assigned (or assigned components
+                row_target = NULL_SLICE if row_key_is_null_slice else row_key
+
+                if assigned_target.ndim == 1:
+                    # cannot branch on  block_is_column, as may be 2D array
+                    assigned_target[row_target] = value_piece
+                else: # we are editing the entire assigned target sub block
+                    assigned_target[row_target, NULL_SLICE] = value_piece
+
+                assigned_target.flags.writeable = False
+                assigned_components.append(assigned_target)
+                # reset after completing assignment to get new target
+                target_block_idx = target_key = None
+
+            #-------------------------------------------------------------------
+            # all assignments for this block have been made
+
+            if assigned_components:
+                if block_is_column:
+                    # only have one sub-component and no remaining parts, do not need to get from list
+                    yield assigned_target
                 else:
-                    if row_key is None:
-                        assigned[:, target_slice] = value_piece
-                    else:
-                        assigned[row_key, target_slice] = value_piece
-
-                target_block_idx = target_slice = None
-
-            if assigned is None:
-                yield b # no change
+                    yield from assigned_components
+                    # get any remaining part of the block; will only have remainders if b.ndim > 1
+                    if assigned_stop < b.shape[1]:
+                        sub = b[NULL_SLICE, assigned_stop:]
+                        sub.flags.writeable = False
+                        yield sub
             else:
-                # disable writing so clients can keep the array
-                assigned.flags.writeable = False
-                yield assigned
+                yield b # no change
+
 
 
     def _assign_blocks_from_boolean_blocks(self,
