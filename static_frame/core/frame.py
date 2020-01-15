@@ -117,16 +117,16 @@ from static_frame.core.index_auto import IndexAutoFactoryType
 from static_frame.core.store_filter import StoreFilter
 from static_frame.core.store_filter import STORE_FILTER_DEFAULT
 
-# NOTE: static_frame.core.store imports frame.py
 
 from static_frame.core.exception import ErrorInitFrame
+from static_frame.core.exception import AxisInvalid
 
 from static_frame.core.doc_str import doc_inject
 
 if tp.TYPE_CHECKING:
-    import pandas #pylint: disable=W0611
-    from xarray import Dataset #pylint: disable=W0611
-    import pyarrow #pylint: disable=W0611
+    import pandas #pylint: disable=W0611 #pragma: no cover
+    from xarray import Dataset #pylint: disable=W0611 #pragma: no cover
+    import pyarrow #pylint: disable=W0611 #pragma: no cover
 
 
 
@@ -1263,7 +1263,7 @@ class Frame(ContainerOperand):
 
 
         if skip_header < 0:
-            raise RuntimeError('skip_header must be greater than or equal to 0')
+            raise ErrorInitFrame('skip_header must be greater than or equal to 0')
 
         fp = path_filter(fp)
         delimiter_native = '\t'
@@ -4098,7 +4098,7 @@ class Frame(ContainerOperand):
             major = columns_values
             minor = index_values
         else:
-            raise NotImplementedError()
+            raise AxisInvalid(f'invalid axis: {axis}')
 
         return tuple(
                 zip(major, (tuple(zip(minor, v))
@@ -4268,7 +4268,7 @@ class Frame(ContainerOperand):
         if store_filter:
             filter_func = store_filter.from_type_filter_element
 
-        try:
+        try: # manage finally closing of file
             if include_columns:
                 if columns.depth == 1:
                     columns_rows = (columns,)
@@ -4471,8 +4471,8 @@ class Frame(ContainerOperand):
         fp = write_optional_file(content=content, fp=fp)
 
         if show:
-            import webbrowser
-            webbrowser.open_new_tab(fp)
+            import webbrowser #pragma: no cover
+            webbrowser.open_new_tab(fp) #pragma: no cover
         return fp
 
     def to_rst(self,
@@ -4541,7 +4541,7 @@ class FrameGO(Frame):
         '''For adding a single column, one column at a time.
         '''
         if key in self._columns:
-            raise RuntimeError('key already defined in columns; use .assign to get new Frame')
+            raise RuntimeError(f'The provided key ({key}) is already defined in columns; if you want to change or replace this column, use .assign to get new Frame')
 
         row_count = len(self._index)
 
@@ -4555,7 +4555,7 @@ class FrameGO(Frame):
             # this permits unaligned assignment as no index is used, possibly remove
             if value.ndim != 1 or len(value) != row_count:
                 # block may have zero shape if created without columns
-                raise RuntimeError('incorrectly sized, unindexed value')
+                raise RuntimeError(f'incorrectly sized unindexed value: {len(value)} != {row_count}')
             self._blocks.append(value)
         else:
             if not hasattr(value, '__iter__') or isinstance(value, str):
@@ -4593,6 +4593,9 @@ class FrameGO(Frame):
 
         This method differs from FrameGO.extend_items() by permitting contiguous underlying blocks to be extended from another Frame into this Frame.
         '''
+        if not isinstance(container, (Series, Frame)):
+            raise NotImplementedError(
+                    f'no support for extending with {type(container)}')
 
         if not len(container.index): # must be empty data, empty index container
             return
@@ -4609,16 +4612,13 @@ class FrameGO(Frame):
         elif isinstance(container, Series):
             self._columns.append(container.name)
             self._blocks.append(container.values)
-        else:
-            raise NotImplementedError(
-                    'no support for extending with %s' % type(container))
 
-        if len(self._columns) != self._blocks._shape[1]:
-            raise RuntimeError('malformed Frame was used in extension')
+        # this should never happen, and is hard to test!
+        assert len(self._columns) == self._blocks._shape[1] #pragma: no cover
 
 
     #---------------------------------------------------------------------------
-    def to_frame(self):
+    def to_frame(self) -> Frame:
         '''
         Return Frame version of this Frame.
         '''
@@ -4632,11 +4632,11 @@ class FrameGO(Frame):
                 own_columns=False # need to make static only
                 )
 
-    def to_frame_go(self):
+    def to_frame_go(self) -> 'FrameGO':
         '''
         Return a FrameGO version of this Frame.
         '''
-        raise NotImplementedError('Already a FrameGO')
+        raise ErrorInitFrame('This Frame is already a FrameGO')
 
 
 #-------------------------------------------------------------------------------
